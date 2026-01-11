@@ -73,7 +73,7 @@ export default function GroupsPage() {
                 Créé le {new Date(group.dateCreation).toLocaleDateString("fr-FR")}
               </div>
               <Button asChild variant="outline" className="w-full bg-transparent">
-                <Link href={`/dashboard/groups/${group.idGroupe}`}>Voir détails</Link>
+                <Link href={`/dashboard/groups/${group.id ?? group.idGroupe ?? ''}`}>Voir détails</Link>
               </Button>
             </CardContent>
           </Card>
