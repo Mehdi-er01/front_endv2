@@ -2,8 +2,8 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { GroupeDTO, ProjetDTO, UtilisateurDTO } from "@/lib/types"
-import { groupeApi, projetApi } from "@/lib/api-client"
+import { GroupeDTO, ProjetDTO, UtilisateurDTO, SalleDiscussionDTO } from "@/lib/types"
+import { groupeApi, projetApi, salleDiscussionApi } from "@/lib/api-client"
 import { usePermissions } from "@/lib/usePermissions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,6 +32,7 @@ import {
   MessageCircle
 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { FadeIn } from "@/components/motion/fade-in"
 
@@ -44,6 +45,7 @@ export function GroupeProjetDetail({ groupeId, currentUser }: GroupeProjetDetail
   const [groupe, setGroupe] = useState<GroupeDTO | null>(null)
   const [projets, setProjets] = useState<ProjetDTO[]>([])
   const [selectedProjet, setSelectedProjet] = useState<ProjetDTO | null>(null)
+  const [salles, setSalles] = useState<SalleDiscussionDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
@@ -69,6 +71,13 @@ export function GroupeProjetDetail({ groupeId, currentUser }: GroupeProjetDetail
       if (groupeProjets.length > 0) {
         setSelectedProjet(groupeProjets[0])
       }
+      // Load group discussion rooms (optional)
+      try {
+        const groupSalles = await salleDiscussionApi.getByGroup(groupeId)
+        setSalles(groupSalles || [])
+      } catch (e) {
+        setSalles([])
+      }
     } catch (err: any) {
       setError(err.message || "Échec du chargement du groupe et des projets")
     } finally {
@@ -82,6 +91,21 @@ export function GroupeProjetDetail({ groupeId, currentUser }: GroupeProjetDetail
       setSelectedProjet(projetData)
     } catch (err: any) {
       setError(err.message || "Échec du chargement des détails du projet")
+    }
+  }
+
+  const handleJoinProjectAction = async () => {
+    if (!currentUser || !selectedProjet) return
+    try {
+      setActionLoading(true)
+      await projetApi.addMember(selectedProjet.id, currentUser.id)
+      const updated = await projetApi.getById(selectedProjet.id)
+      setSelectedProjet(updated)
+      await loadGroupAndProjets()
+    } catch (err: any) {
+      setError(err.message || "Échec de l'adhésion au projet")
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -253,6 +277,29 @@ export function GroupeProjetDetail({ groupeId, currentUser }: GroupeProjetDetail
               ))
             )}
           </div>
+          {/* Salles de discussion du groupe */}
+          {salles.length > 0 && (
+            <div className="space-y-3 mt-4">
+              <div className="flex items-center justify-between px-1">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-primary" />
+                  Salles de discussion
+                </h4>
+                <Badge variant="secondary" className="rounded-full">{salles.length}</Badge>
+              </div>
+              <div className="space-y-2">
+                {salles.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-card">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{s.nom}</p>
+                      <p className="text-xs text-muted-foreground truncate">{s.dernierMessage || s.description}</p>
+                    </div>
+                    <Button size="sm" variant="ghost" className="ml-3">Ouvrir</Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Project Details Main Area */}
@@ -276,9 +323,16 @@ export function GroupeProjetDetail({ groupeId, currentUser }: GroupeProjetDetail
                         </div>
                         <p className="text-muted-foreground">{selectedProjet.description}</p>
                       </div>
-                      <Button variant="ghost" size="icon" className="rounded-full">
-                        <MoreVertical className="w-5 h-5" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button asChild variant="ghost" size="sm" className="rounded-full">
+                          <Link href={`/groupes/${groupe.id}`}>
+                            Ouvrir le groupe
+                          </Link>
+                        </Button>
+                        <Button variant="ghost" size="icon" className="rounded-full">
+                          <MoreVertical className="w-5 h-5" />
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
 
@@ -325,12 +379,26 @@ export function GroupeProjetDetail({ groupeId, currentUser }: GroupeProjetDetail
                           ))}
                         </div>
 
+                        {selectedProjet.listesDiffusion?.length ? (
+                          <div className="pt-4">
+                            <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2">Listes de diffusion</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedProjet.listesDiffusion.map((ld) => (
+                                <Badge key={ld.id} variant="outline" className="rounded-full">{ld.nom}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
                         <div className="flex flex-wrap gap-3 pt-4 border-t border-border/50">
                           {permissions.canEditProject && (
                             <Button variant="outline" className="rounded-xl">Modifier le projet</Button>
                           )}
                           {permissions.canJoinProject && (
-                            <Button className="rounded-xl shadow-lg shadow-primary/20">Rejoindre le projet</Button>
+                            <Button onClick={handleJoinProjectAction} disabled={actionLoading} className="rounded-xl shadow-lg shadow-primary/20">
+                              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <UserPlus className="h-4 w-4 mr-2" />}
+                              Rejoindre le projet
+                            </Button>
                           )}
                           {permissions.canCloseProject && selectedProjet.statutProjet !== "CLOTURE" && (
                             <Button variant="outline" className="rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50">Clôturer</Button>
@@ -342,6 +410,20 @@ export function GroupeProjetDetail({ groupeId, currentUser }: GroupeProjetDetail
                       <TabsContent value="members" className="space-y-6 mt-6">
                         {permissions.canViewMembersAndTasks ? (
                           <div className="space-y-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2">
+                              <div className="p-3 rounded-xl bg-secondary/10 border border-border/50 text-center">
+                                <p className="text-[10px] font-bold uppercase text-muted-foreground">Membres</p>
+                                <p className="text-xl font-bold">{selectedProjet.membres?.length || 0}</p>
+                              </div>
+                              <div className="p-3 rounded-xl bg-secondary/10 border border-border/50 text-center">
+                                <p className="text-[10px] font-bold uppercase text-muted-foreground">Administrateurs</p>
+                                <p className="text-xl font-bold">{selectedProjet.admins?.length || 0}</p>
+                              </div>
+                              <div className="p-3 rounded-xl bg-secondary/10 border border-border/50 text-center">
+                                <p className="text-[10px] font-bold uppercase text-muted-foreground">Connectés</p>
+                                <p className="text-xl font-bold">{selectedProjet.membres?.filter(m => m.activeAndConnected).length || 0}</p>
+                              </div>
+                            </div>
                             <div>
                               <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Administrateurs</h4>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
